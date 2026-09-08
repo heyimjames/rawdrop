@@ -18,9 +18,10 @@ import Photos
  *               roll to the next frame number; camera · lens does not
  *               move when unchanged; exposure numbers roll as the new
  *               EXIF arrives. Reduce Motion: crossfade only.
- *  tap ring     (bottom left, by the thumb) this photo joins the
- *               selection; the send count ticks. Double-tap the photo
- *               does the same and the ring pops to say so.
+ *  tap ring     (bottom left, by the thumb) or double-tap the photo:
+ *               medium tap; the photo dips; the amber frame settles onto
+ *               it from 1.03 on the toy spring; the ring pops; the send
+ *               count ticks. Deselect: soft tap, frame fades, no motion.
  *  pull down    the photo follows the finger, backdrop thins
  *  release      past 110pt or flicked → the copy flies back, cropping
  *               to 1:1 and landing on its tile (grid already scrolled
@@ -63,6 +64,9 @@ struct PhotoViewer: View {
     @State private var shot: ShotInfo?
     /// Bumped by a double-tap so the ring can pop in acknowledgement.
     @State private var ringPop = 0
+    /// Haptic triggers: selecting is a firmer tap than deselecting.
+    @State private var selects = 0
+    @State private var deselects = 0
     /// Mirror of the selection that the hosted pages can observe. Pages are
     /// built once by UIKit, so they cannot read the parent's state directly.
     @State private var pageState = PageState()
@@ -182,6 +186,8 @@ struct PhotoViewer: View {
             shot = next
         }
         .accessibilityAddTraits(.isModal)
+        .sensoryFeedback(.impact(weight: .medium), trigger: selects)
+        .sensoryFeedback(.impact(flexibility: .soft), trigger: deselects)
     }
 
     // MARK: Bands
@@ -223,6 +229,7 @@ struct PhotoViewer: View {
                 .allowsHitTesting(pull == 0)
                 .onTapGesture(count: 2) {
                     guard !isBusy, let photo = currentPhoto else { return }
+                    if selection.contains(photo.id) { deselects += 1 } else { selects += 1 }
                     toggleSelect(photo)
                     ringPop += 1
                 }
@@ -278,6 +285,7 @@ struct PhotoViewer: View {
             HStack(spacing: 12) {
                 if let photo = currentPhoto {
                     SelectRing(isSelected: selection.contains(photo.id), pop: ringPop) {
+                        if selection.contains(photo.id) { deselects += 1 } else { selects += 1 }
                         toggleSelect(photo)
                     }
                     .disabled(isBusy)
@@ -428,8 +436,7 @@ private struct ViewerPage: View {
     let state: PageState
 
     @State private var image: UIImage?
-    @State private var drawn: CGFloat = 0       // how much of the line is drawn
-    @State private var bloom: CGFloat = 0       // outer glow, 0...1
+    @State private var shown = false            // frame is on
     @State private var dip: CGFloat = 1         // photo scale on tap
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
@@ -450,19 +457,15 @@ private struct ViewerPage: View {
         }
         .onChange(of: isSelected, initial: true) { _, selected in
             if reduceMotion {
-                withAnimation(Motion.reduced) { drawn = selected ? 1 : 0 }
+                withAnimation(Motion.reduced) { shown = selected }
                 return
             }
             if selected {
                 dip = 0.985
-                bloom = 0
-                withAnimation(.timingCurve(0.16, 1, 0.3, 1, duration: 0.32)) { drawn = 1 }
-                withAnimation(.easeOut(duration: 0.12).delay(0.08)) { bloom = 1 }
-                withAnimation(.easeOut(duration: 0.28).delay(0.2)) { bloom = 0 }
-                withAnimation(Motion.settle.delay(0.26)) { dip = 1 }
+                withAnimation(Motion.toy) { shown = true }
+                withAnimation(Motion.settle.delay(0.06)) { dip = 1 }
             } else {
-                withAnimation(.easeOut(duration: 0.16)) { drawn = 0 }
-                bloom = 0
+                withAnimation(.easeOut(duration: 0.14)) { shown = false }
                 dip = 1
             }
         }
@@ -477,23 +480,14 @@ private struct ViewerPage: View {
         }
     }
 
-    /// The line draws clockwise from the top-left corner; the bloom is the
-    /// same shape, wide, blurred, and briefly lit.
+    /// One frame, one settle. Scale and opacity share the toy spring, so
+    /// it lands with a single small overshoot and nothing else moves.
     private var border: some View {
-        let shape = RoundedRectangle(cornerRadius: 16, style: .continuous)
-        return ZStack {
-            shape
-                .trim(from: 0, to: drawn)
-                .stroke(Palette.amber, style: StrokeStyle(lineWidth: 14, lineCap: .round))
-                .blur(radius: 12)
-                .opacity(Double(bloom) * 0.55)
-                .padding(-4)
-            shape
-                .trim(from: 0, to: drawn)
-                .stroke(Palette.amber, style: StrokeStyle(lineWidth: 3, lineCap: .round))
-                .padding(1.5)
-        }
-        .allowsHitTesting(false)
+        RoundedRectangle(cornerRadius: 16, style: .continuous)
+            .strokeBorder(Palette.amber, lineWidth: 3)
+            .scaleEffect(shown ? 1 : 1.03)
+            .opacity(shown ? 1 : 0)
+            .allowsHitTesting(false)
     }
 }
 
