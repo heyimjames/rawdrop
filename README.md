@@ -83,4 +83,4 @@ RawDrop collects nothing. The full policy is one page: [rawdrop-heyimjames-proje
 
 ## Made by
 
-[OCTOBER](https://octoberwip.com), a design studio in Lisbon. A collaboration between humans & AI.
+[OCTOBER](https://octoberwip.com), a design studio in London. A collaboration between humans & AI.
