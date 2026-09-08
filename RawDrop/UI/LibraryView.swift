@@ -55,6 +55,9 @@ struct LibraryView: View {
                     .padding(.bottom, 80)
                 }
                 .background(Color.black)
+                .id(library.album?.id ?? "all")            // a new album is a new grid
+                .transition(.opacity)
+                .animation(Motion.fade, value: library.album?.id)
                 .scrollDisabled(library.photos.isEmpty)
                 .overlay {
                     if library.photos.isEmpty && !library.isLoading {
@@ -245,6 +248,7 @@ struct LibraryView: View {
             isSent: sent.ids.contains(photo.id),
             isExtracting: send.currentPhotoID == photo.id,
             isLifted: viewerID == photo.id,
+            index: library.position[photo.id] ?? 0,
             tap: { tap(photo) },
             resolveInfo: { library.resolveInfo(for: photo) }
         )

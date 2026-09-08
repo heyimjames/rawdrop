@@ -11,7 +11,14 @@ import SwiftUI
  *  1000ms   "RawDrop" fades up
  *  1150ms   one line of copy fades up
  *  1350ms   the button rises from the bottom edge
- *   after   the RAW card is draggable; let go and it springs home
+ *   after   the RAW card is draggable: it lifts (1.06, shadow grows,
+ *           soft tap) as you pick it up, leans into the pull, and
+ *           springs home when you let go (soft tap on landing)
+ *
+ *  DROP (the egg): pull the RAW card 120pt or flick it, and it falls
+ *  with gravity, tumbling, off the bottom (~520ms, soft-heavy haptic).
+ *  +580ms a fresh RAW slides out from behind the JPG with the same
+ *  reveal and glint. RawDrop drops the RAW.
  *
  *  Reduce Motion: same order, no travel, no overshoot, no glint.
  * ───────────────────────────────────────────────────────── */
@@ -24,6 +31,8 @@ enum Intro {
     static let reveal = Motion.reveal
     static let fade   = Motion.fade
     static let home   = Motion.toy
+    static let fall   = Animation.timingCurve(0.5, 0, 1, 0.6, duration: 0.52)   // gravity
+    static let dropDistance: CGFloat = 120
 }
 
 /// Two stacked frames, JPG behind, RAW in front. The whole app in one glyph.
@@ -35,6 +44,15 @@ struct PairGlyph: View {
 
     @State private var drag: CGSize = .zero
     @State private var releases = 0
+    @State private var lifted = false
+    @State private var pickups = 0
+    /// The egg. `fallen` moves the card off the sheet; `hidden` parks the
+    /// replacement behind the JPG until its reveal; `drops` replays the glint.
+    @State private var fallen = false
+    @State private var hidden = false
+    @State private var drops = 0        // re-deals; each one fires the glint
+    @State private var falls = 0        // drops; each one fires the haptic
+    @State private var fallAngle: Double = 0
 
     var body: some View {
         ZStack {
@@ -46,34 +64,88 @@ struct PairGlyph: View {
                 .animation(Intro.rise, value: stage)
 
             card("RAW", tint: Palette.amber, fg: .black)
-                .modifier(Glint(fire: stage >= 3 && !reduceMotion, drag: reduceMotion ? 0 : drag.width))
-                .rotationEffect(.degrees(rawAngle))
-                .offset(x: rawOffset.width, y: rawOffset.height)
-                .opacity(stage >= 2 || (reduceMotion && stage >= 1) ? 1 : 0)
+                .modifier(Glint(shots: (stage >= 3 && !reduceMotion ? 1 : 0) + drops, drag: reduceMotion ? 0 : drag.width))
+                .scaleEffect(lifted && !reduceMotion ? 1.06 : 1)
+                .shadow(color: .black.opacity(lifted ? 0.55 : 0.25), radius: lifted ? 22 : 8, y: lifted ? 14 : 4)
+                .rotationEffect(.degrees(rawAngle + fallAngle))
+                .offset(x: rawOffset.width, y: rawOffset.height + (fallen ? 900 : 0))
+                .opacity(fallen && reduceMotion ? 0 : (revealed ? 1 : 0))
                 .animation(reduceMotion ? Intro.fade : Intro.reveal, value: stage)
+                .animation(reduceMotion ? Intro.fade : Intro.reveal, value: hidden)
+                .animation(Motion.state, value: lifted)
                 .gesture(
                     DragGesture()
-                        .onChanged { drag = $0.translation }
-                        .onEnded { _ in
-                            releases += 1
-                            withAnimation(Intro.home) { drag = .zero }
+                        .onChanged { value in
+                            guard !fallen else { return }
+                            if !lifted { lifted = true; pickups += 1 }
+                            drag = value.translation
+                        }
+                        .onEnded { value in
+                            guard !fallen else { return }
+                            lifted = false
+                            let distance = hypot(value.translation.width, value.translation.height)
+                            let flicked = hypot(value.velocity.width, value.velocity.height) > 900
+                            if distance >= Intro.dropDistance || flicked {
+                                drop(direction: value.translation.width >= 0 ? 1 : -1)
+                            } else {
+                                releases += 1
+                                withAnimation(Intro.home) { drag = .zero }
+                            }
                         }
                 )
+                .sensoryFeedback(.impact(flexibility: .soft, intensity: 0.7), trigger: pickups)
                 .sensoryFeedback(.impact(flexibility: .soft), trigger: releases)
+                .sensoryFeedback(.impact(weight: .heavy, intensity: 0.6), trigger: falls)
                 .accessibilityHidden(true)
         }
         .frame(width: 140, height: 110)
     }
 
+    /// Out from behind the JPG: after its cue on first open, and again after
+    /// a drop once the replacement is ready.
+    private var revealed: Bool {
+        (stage >= 2 || (reduceMotion && stage >= 1)) && !hidden
+    }
+
     /// Before its cue the RAW card sits exactly behind the JPG, same tilt.
     private var rawOffset: CGSize {
-        let rest = stage >= 2 || reduceMotion ? CGSize(width: 18, height: -4) : CGSize(width: -22, height: 6)
+        let rest = revealed ? CGSize(width: 18, height: -4) : CGSize(width: -22, height: 6)
         return CGSize(width: rest.width + drag.width, height: rest.height + drag.height)
     }
 
     private var rawAngle: Double {
-        let rest = stage >= 2 || reduceMotion ? 6.0 : -8.0
-        return rest + Double(drag.width) / 14   // leans into the direction it is pulled
+        let rest = revealed ? 6.0 : -8.0
+        // Leans into the pull: sideways travel tilts it, and lifting it up
+        // or dragging it down adds a little in the same direction of turn.
+        return rest + Double(drag.width) / 14 - Double(drag.height) / 40
+    }
+
+    /// The card falls, and a new one is dealt from behind the JPG.
+    private func drop(direction: Double) {
+        falls += 1
+        if reduceMotion {
+            withAnimation(Intro.fade) { fallen = true }
+        } else {
+            withAnimation(Intro.fall) {
+                fallen = true
+                fallAngle = 35 * direction
+            }
+        }
+        Task { @MainActor in
+            try? await Task.sleep(for: .milliseconds(reduceMotion ? 300 : 560))
+            // Reset instantly while invisible, parked behind the JPG.
+            var t = Transaction(); t.disablesAnimations = true
+            withTransaction(t) {
+                hidden = true
+                fallen = false
+                fallAngle = 0
+                drag = .zero
+            }
+            try? await Task.sleep(for: .milliseconds(40))
+            withAnimation(reduceMotion ? Intro.fade : Intro.reveal) { hidden = false }
+            try? await Task.sleep(for: .milliseconds(380))   // glint as it settles
+            if !reduceMotion { drops += 1 }
+        }
     }
 
     private func card(_ label: String, tint: Color, fg: Color) -> some View {
@@ -93,7 +165,8 @@ struct PairGlyph: View {
 /// view is being dragged, the same highlight tracks the drag instead, as if
 /// the light source stayed put. Paused whenever neither is happening.
 struct Glint: ViewModifier {
-    let fire: Bool
+    /// Fires once each time this increases.
+    let shots: Int
     let drag: CGFloat
     @State private var start: Date?
 
@@ -109,8 +182,8 @@ struct Glint: ViewModifier {
                 view.colorEffect(ShaderLibrary.glint(.float2(proxy.size), .float(progress), .float(intensity)))
             }
         }
-        .onChange(of: fire) { _, now in
-            guard now, start == nil else { return }
+        .onChange(of: shots) { old, new in
+            guard new > old else { return }
             start = .now
             Task {
                 try? await Task.sleep(for: .seconds(duration + 0.1))

@@ -11,6 +11,8 @@ struct RawTile: View {
     /// The photo is open in the viewer. The tile goes dark so the photo
     /// reads as having been lifted out of the grid.
     let isLifted: Bool
+    /// Position in the grid, used to stagger the tick when a send lands.
+    let index: Int
     let tap: () -> Void
     let resolveInfo: () -> Void
 
@@ -82,17 +84,21 @@ struct RawTile: View {
         }
     }
 
-    @ViewBuilder
+    /// Lands like a stamp when a send completes, a beat after its neighbour.
     private var sentMark: some View {
-        if isSent {
-            Image(systemName: "checkmark")
-                .font(.system(size: 9, weight: .bold))
-                .foregroundStyle(.black)
-                .frame(width: 16, height: 16)
-                .background(.white.opacity(0.85), in: Circle())
-                .padding(6)
-                .accessibilityHidden(true)
-        }
+        Image(systemName: "checkmark")
+            .font(.system(size: 9, weight: .bold))
+            .foregroundStyle(.black)
+            .frame(width: 16, height: 16)
+            .background(.white.opacity(0.85), in: Circle())
+            .padding(6)
+            .scaleEffect(isSent ? 1 : (reduceMotion ? 1 : 0.4))
+            .opacity(isSent ? 1 : 0)
+            .animation(
+                reduceMotion ? Motion.reduced : Motion.toy.delay(Double(index % 12) * 0.03),
+                value: isSent
+            )
+            .accessibilityHidden(true)
     }
 
     /// Empty ring in select mode, filled when chosen. Nothing in browse mode.
