@@ -1,0 +1,131 @@
+name: RawDrop
+settings:
+  base:
+    DEVELOPMENT_TEAM: HJJGM6KHY5
+options:
+  bundleIdPrefix: com.jamesfrewin
+  deploymentTarget:
+    iOS: "26.0"
+  xcodeVersion: "26.0"
+  generateEmptyDirectories: true
+
+targets:
+  RawDrop:
+    type: application
+    platform: iOS
+    sources:
+      - path: RawDrop
+        excludes:
+          - Info.plist
+      - path: Shared
+    info:
+      path: RawDrop/Info.plist
+      properties:
+        CFBundleShortVersionString: $(MARKETING_VERSION)
+        CFBundleVersion: $(CURRENT_PROJECT_VERSION)
+        CFBundleDisplayName: RawDrop
+        CFBundleIconName: AppIcon
+        ITSAppUsesNonExemptEncryption: false
+        NSPhotoLibraryUsageDescription: "RawDrop reads your photo library to find the RAW files inside your camera imports and hand them to Lightroom. Nothing is uploaded."
+        UILaunchScreen:
+          UIColorName: LaunchBackground
+        UISupportedInterfaceOrientations:
+          - UIInterfaceOrientationPortrait
+        UIUserInterfaceStyle: Dark
+        CFBundleURLTypes:
+          - CFBundleURLName: com.jamesfrewin.RawDrop
+            CFBundleURLSchemes:
+              - rawdrop
+    entitlements:
+      path: RawDrop/RawDrop.entitlements
+      properties:
+        com.apple.security.application-groups:
+          - group.com.jamesfrewin.RawDrop
+    settings:
+      base:
+        SWIFT_VERSION: "5.0"
+        SWIFT_STRICT_CONCURRENCY: minimal
+        INFOPLIST_FILE: RawDrop/Info.plist
+        PRODUCT_BUNDLE_IDENTIFIER: com.jamesfrewin.RawDrop
+        MARKETING_VERSION: "1.0"
+        CURRENT_PROJECT_VERSION: 3
+        DEVELOPMENT_TEAM: HJJGM6KHY5
+        CODE_SIGN_STYLE: Automatic
+        TARGETED_DEVICE_FAMILY: "1"
+        ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME: AccentColor
+        ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
+      configs:
+        Release:
+          CODE_SIGN_STYLE: Manual
+          CODE_SIGN_IDENTITY: "iPhone Distribution"
+          PROVISIONING_PROFILE_SPECIFIER: "RawDrop App Store asc"
+    dependencies:
+      - target: RawDropWidgets
+        embed: true
+
+  RawDropWidgets:
+    type: app-extension
+    platform: iOS
+    sources:
+      - path: RawDropWidgets
+        excludes:
+          - Info.plist
+      - path: Shared
+    info:
+      path: RawDropWidgets/Info.plist
+      properties:
+        CFBundleShortVersionString: $(MARKETING_VERSION)
+        CFBundleVersion: $(CURRENT_PROJECT_VERSION)
+        CFBundleDisplayName: RawDrop
+        NSExtension:
+          NSExtensionPointIdentifier: com.apple.widgetkit-extension
+    entitlements:
+      path: RawDropWidgets/RawDropWidgets.entitlements
+      properties:
+        com.apple.security.application-groups:
+          - group.com.jamesfrewin.RawDrop
+    settings:
+      base:
+        SWIFT_VERSION: "5.0"
+        INFOPLIST_FILE: RawDropWidgets/Info.plist
+        PRODUCT_BUNDLE_IDENTIFIER: com.jamesfrewin.RawDrop.Widgets
+        MARKETING_VERSION: "1.0"
+        CURRENT_PROJECT_VERSION: 3
+        DEVELOPMENT_TEAM: HJJGM6KHY5
+        CODE_SIGN_STYLE: Automatic
+        TARGETED_DEVICE_FAMILY: "1"
+        ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME: AccentColor
+      configs:
+        Release:
+          CODE_SIGN_STYLE: Manual
+          CODE_SIGN_IDENTITY: "iPhone Distribution"
+          PROVISIONING_PROFILE_SPECIFIER: "RawDrop Widgets App Store asc"
+
+  RawDropUITests:
+    type: bundle.ui-testing
+    platform: iOS
+    sources:
+      - path: RawDropUITests
+    dependencies:
+      - target: RawDrop
+    settings:
+      base:
+        SWIFT_VERSION: "5.0"
+        GENERATE_INFOPLIST_FILE: YES
+        PRODUCT_BUNDLE_IDENTIFIER: com.jamesfrewin.RawDrop.UITests
+        TEST_TARGET_NAME: RawDrop
+
+schemes:
+  RawDrop:
+    build:
+      targets:
+        RawDrop: all
+        RawDropUITests: [test]
+    run:
+      config: Debug
+    test:
+      config: Debug
+      targets:
+        - RawDropUITests
+    archive:
+      config: Release

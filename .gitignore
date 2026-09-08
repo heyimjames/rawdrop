@@ -1,0 +1,12 @@
+build/
+DerivedData/
+xcuserdata/
+*.xcuserstate
+.DS_Store
+RawDrop.xcodeproj/project.xcworkspace/xcshareddata/swiftpm/
+signing/
+.asc/
+RawDrop.xcodeproj/
+store/raw/
+metadata/
+tools/__pycache__/
