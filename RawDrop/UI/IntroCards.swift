@@ -45,7 +45,7 @@ struct PairGlyph: View {
                 .offset(y: stage >= 1 || reduceMotion ? 0 : 18)
                 .animation(Intro.rise, value: stage)
 
-            card("RAW", tint: .accentColor, fg: .black)
+            card("RAW", tint: Palette.amber, fg: .black)
                 .modifier(Glint(fire: stage >= 3 && !reduceMotion, drag: reduceMotion ? 0 : drag.width))
                 .rotationEffect(.degrees(rawAngle))
                 .offset(x: rawOffset.width, y: rawOffset.height)

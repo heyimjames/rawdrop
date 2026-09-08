@@ -448,7 +448,7 @@ struct DayHeader: View {
             Spacer()
             Button(allSelected ? "Deselect" : "Select", action: toggle)
                 .font(.subheadline.weight(.medium))
-                .foregroundStyle(Color.accentColor)
+                .foregroundStyle(Palette.amber)
                 .contentTransition(.interpolate)
                 .disabled(disabled)
         }

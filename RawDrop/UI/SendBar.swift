@@ -92,9 +92,9 @@ struct SendBar: View {
 
     private var glass: Glass {
         switch phase {
-        case .idle: .regular.tint(isOver ? Palette.over : .accentColor).interactive()
+        case .idle: .regular.tint(isOver ? Palette.over : Palette.amber).interactive()
         case .extracting: .regular.interactive()
-        case .sent: .regular.tint(.accentColor)
+        case .sent: .regular.tint(Palette.amber)
         case .sharing, .failed: .regular
         }
     }
@@ -106,7 +106,7 @@ struct SendBar: View {
         if case .extracting(_, _, let fraction) = phase {
             GeometryReader { geo in
                 Rectangle()
-                    .fill(Color.accentColor.opacity(0.35))
+                    .fill(Palette.amber.opacity(0.35))
                     .frame(width: geo.size.width * fraction)
                     .animation(Motion.progress, value: fraction)
             }
@@ -184,7 +184,11 @@ struct SendBar: View {
     }
 }
 
-/// The one colour that is not amber, black or white: too many.
+/// The app's colours, by name rather than through the accent system. The
+/// accent can be reset to system blue by UIKit appearance proxies, and
+/// amber must never depend on it.
 enum Palette {
+    static let amber = Color("AccentColor")
+    /// The one colour that is not amber, black or white: too many.
     static let over = Color(red: 1.0, green: 0.30, blue: 0.25)
 }

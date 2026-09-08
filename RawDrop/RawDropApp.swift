@@ -26,6 +26,7 @@ struct RawDropApp: App {
         WindowGroup {
             RootView()
                 .preferredColorScheme(.dark)
+                .tint(Palette.amber)
                 // Appearance proxies must wait for UIKit; set in init they
                 // reset the app's tint to system blue.
                 .onAppear { Self.styleLargeTitles() }

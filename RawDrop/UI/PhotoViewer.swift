@@ -163,7 +163,11 @@ struct PhotoViewer: View {
             let side = UIScreen.main.bounds.width * UIScreen.main.scale
             for await frame in Thumbnails.shared.stream(for: photo.asset, targetSize: CGSize(width: side, height: side)) {
                 let prepared = await frame.byPreparingForDisplay() ?? frame
-                while flying { try? await Task.sleep(for: .milliseconds(32)) }
+                // Wait for the flight to end. A cancelled sleep throws at once,
+                // so this must bail out rather than spin.
+                while flying {
+                    do { try await Task.sleep(for: .milliseconds(32)) } catch { return }
+                }
                 if Task.isCancelled { return }
                 heroImage = prepared
             }
@@ -311,7 +315,7 @@ struct PhotoViewer: View {
                 .frame(height: 56)
             }
             .buttonStyle(.plain)
-            .glassEffect(.regular.tint(isOver ? Palette.over : .accentColor).interactive(), in: .capsule)
+            .glassEffect(.regular.tint(isOver ? Palette.over : Palette.amber).interactive(), in: .capsule)
             .animation(Motion.mode, value: isOver)
             .sensoryFeedback(.warning, trigger: isOver) { _, now in now }
             .disabled(isBusy)
@@ -355,7 +359,7 @@ struct PhotoViewer: View {
             // Let frames settle, and give the tile-size image a beat to arrive
             // so the copy that flies is the photo, never a placeholder.
             for _ in 0..<8 where heroImage == nil {
-                try? await Task.sleep(for: .milliseconds(16))
+                do { try await Task.sleep(for: .milliseconds(16)) } catch { return }
             }
             withAnimation(heroAnimation) { hero = 1 }
             try? await Task.sleep(for: .milliseconds(reduceMotion ? 220 : 360))
@@ -480,13 +484,13 @@ private struct ViewerPage: View {
         return ZStack {
             shape
                 .trim(from: 0, to: drawn)
-                .stroke(Color.accentColor, style: StrokeStyle(lineWidth: 14, lineCap: .round))
+                .stroke(Palette.amber, style: StrokeStyle(lineWidth: 14, lineCap: .round))
                 .blur(radius: 12)
                 .opacity(Double(bloom) * 0.55)
                 .padding(-4)
             shape
                 .trim(from: 0, to: drawn)
-                .stroke(Color.accentColor, style: StrokeStyle(lineWidth: 3, lineCap: .round))
+                .stroke(Palette.amber, style: StrokeStyle(lineWidth: 3, lineCap: .round))
                 .padding(1.5)
         }
         .allowsHitTesting(false)
@@ -508,7 +512,7 @@ private struct SelectRing: View {
                     .strokeBorder(.white.opacity(0.9), lineWidth: 2)
                     .opacity(isSelected ? 0 : 1)
                 Circle()
-                    .fill(Color.accentColor)
+                    .fill(Palette.amber)
                     .opacity(isSelected ? 1 : 0)
                 Image(systemName: "checkmark")
                     .font(.system(size: 18, weight: .bold))

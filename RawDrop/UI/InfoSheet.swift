@@ -47,20 +47,16 @@ struct InfoSheet: View {
 
             Spacer(minLength: 0)
 
-            // Quiet on purpose. Amber is reserved for sending.
+            // White, not amber: amber is reserved for sending.
             Link(destination: site) {
-                HStack(spacing: 6) {
-                    Text("Visit website")
-                    Image(systemName: "arrow.up.right")
-                        .font(.system(size: 12, weight: .semibold))
-                }
-                .font(.subheadline.weight(.semibold))
-                .foregroundStyle(.white)
-                .padding(.horizontal, 22)
-                .frame(height: 44)
+                Text("Visit website")
+                    .font(.headline)
+                    .foregroundStyle(.black)
+                    .frame(maxWidth: .infinity)
+                    .frame(height: 52)
+                    .background(.white, in: Capsule())
             }
             .buttonStyle(.plain)
-            .glassEffect(.regular.interactive(), in: .capsule)
             .padding(.horizontal, 24)
             .padding(.bottom, 14)
             .reveal(stage >= 6, reduceMotion: reduceMotion, travel: 20)
@@ -76,6 +72,8 @@ struct InfoSheet: View {
         .animation(reduceMotion ? Intro.fade : Intro.rise, value: stage)
         .presentationDetents([.fraction(0.6)])
         .presentationDragIndicator(.visible)
+        .presentationBackground(Color(white: 0.07))
+        .presentationCornerRadius(36)
         .preferredColorScheme(.dark)
         .task {
             if reduceMotion {

@@ -45,7 +45,7 @@ struct RawTile: View {
                 .overlay {
                     // Reduce Motion gets a still amber wash instead of the sweep.
                     if isExtracting && reduceMotion {
-                        Color.accentColor.opacity(0.28)
+                        Palette.amber.opacity(0.28)
                     }
                 }
                 .contentShape(Rectangle())
@@ -103,7 +103,7 @@ struct RawTile: View {
                 .background(Circle().fill(.black.opacity(0.2)))
                 .opacity(isSelected ? 0 : 1)
             Circle()
-                .fill(Color.accentColor)
+                .fill(Palette.amber)
                 .opacity(isSelected ? 1 : 0)
             Image(systemName: "checkmark")
                 .font(.system(size: 11, weight: .bold))
