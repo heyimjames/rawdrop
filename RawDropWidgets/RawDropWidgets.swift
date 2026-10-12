@@ -51,8 +51,8 @@ struct WaitingWidget: Widget {
         StaticConfiguration(kind: "com.jamesfrewin.RawDrop.waiting", provider: WaitingProvider()) { entry in
             WaitingEntryView(entry: entry)
         }
-        .configurationDisplayName("RAW waiting")
-        .description("How many RAW photos are waiting to go to Lightroom.")
+        .configurationDisplayName("RAW to send")
+        .description("How many RAW photos are not in Lightroom yet, and how many came from your latest shoot.")
         .supportedFamilies([
             .systemSmall, .systemMedium,
             .accessoryCircular, .accessoryRectangular, .accessoryInline,

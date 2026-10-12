@@ -371,6 +371,7 @@ struct LibraryView: View {
         RawTile(
             photo: photo,
             info: library.info[photo.id],
+            showsFormat: library.mixesFormats,
             isSelecting: isSelecting,
             isSelected: selection.contains(photo.id),
             isSent: sent.ids.contains(photo.id),

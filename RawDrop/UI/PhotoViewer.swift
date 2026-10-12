@@ -225,9 +225,40 @@ struct PhotoViewer: View {
                 }
             }
         }
+        .overlay { shootPosition }
         .padding(.horizontal, 16)
         .padding(.top, 4)
         .padding(.bottom, 8)
+    }
+
+    /// "12 of 40": where this photo sits in the day it was shot, counted in
+    /// grid order so flicking to the next photo counts up.
+    @ViewBuilder
+    private var shootPosition: some View {
+        if let place = placeInShoot {
+            Text("\(place.index) of \(place.count)")
+                .font(.system(size: 13, weight: .medium, design: .monospaced))
+                .foregroundStyle(.secondary)
+                .contentTransition(reduceMotion ? .opacity : .numericText(value: Double(place.index)))
+                .animation(Motion.mode, value: place.index)
+                .accessibilityLabel("Photo \(place.index) of \(place.count) from this day")
+        }
+    }
+
+    /// Days are unbroken runs in the newest-first list, so this only walks
+    /// the current photo's day. Nothing is shown for a day of one.
+    private var placeInShoot: (index: Int, count: Int)? {
+        guard let current, let i = position[current], photos.indices.contains(i),
+              let day = photos[i].creationDate else { return nil }
+        let calendar = Calendar.current
+        func sameDay(_ j: Int) -> Bool {
+            photos[j].creationDate.map { calendar.isDate($0, inSameDayAs: day) } ?? false
+        }
+        var start = i, end = i
+        while start > 0, sameDay(start - 1) { start -= 1 }
+        while end < photos.count - 1, sameDay(end + 1) { end += 1 }
+        let count = end - start + 1
+        return count > 1 ? (i - start + 1, count) : nil
     }
 
     /// The pager is built only once the copy has landed, so none of its

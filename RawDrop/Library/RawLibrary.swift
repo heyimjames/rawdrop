@@ -54,6 +54,11 @@ final class RawLibrary: NSObject, PHPhotoLibraryChangeObserver {
     /// Where each day was shot, for the whole library. Search results are
     /// regrouped by day and borrow these rather than looking them up again.
     private(set) var placeByDay: [Date: String] = [:]
+    /// Every RAW format seen so far: "RAF", "DNG". The grid only labels
+    /// formats when there is more than one to tell apart.
+    private(set) var formats: Set<String> = []
+
+    var mixesFormats: Bool { formats.count > 1 }
 
     var album: AlbumRef? {
         if case .album(let album) = scope { return album }
@@ -179,6 +184,18 @@ final class RawLibrary: NSObject, PHPhotoLibraryChangeObserver {
             await self?.publish(rawResult: rawResult, rawIDs: rawIDs, all: all, favourites: favourites,
                                 photos: visible, sections: sections, position: position)
 
+            // Filenames the search index already holds tell us the formats
+            // in the library long before the tiles that show them scroll in.
+            // Once a second format turns up there is nothing left to learn.
+            if await self?.mixesFormats == false {
+                let indexed = Set(TagStore.shared.snapshot().values.compactMap { tags -> String? in
+                    guard let name = tags.filename else { return nil }
+                    let ext = (name as NSString).pathExtension.uppercased()
+                    return ext.isEmpty ? nil : ext
+                })
+                if !indexed.isEmpty { await self?.addFormats(indexed) }
+            }
+
             let places = DaySection.places(for: chosen == .all ? visible : all)
             if Task.isCancelled { return }
             if places != known {
@@ -291,7 +308,14 @@ final class RawLibrary: NSObject, PHPhotoLibraryChangeObserver {
 
     private func store(_ resolved: RawInfo?, for id: String) {
         infoInFlight.remove(id)
-        if let resolved { info[id] = resolved }
+        guard let resolved else { return }
+        info[id] = resolved
+        if !resolved.format.isEmpty, !formats.contains(resolved.format) { formats.insert(resolved.format) }
+    }
+
+    private func addFormats(_ found: Set<String>) {
+        guard !found.isSubset(of: formats) else { return }
+        formats.formUnion(found)
     }
 
     // MARK: PHPhotoLibraryChangeObserver

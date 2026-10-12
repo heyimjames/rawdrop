@@ -4,6 +4,9 @@ import Photos
 struct RawTile: View {
     let photo: RawPhoto
     let info: RawInfo?
+    /// Only worth saying when the library mixes cameras. A library that is
+    /// all RAF does not need RAF printed on every photo.
+    let showsFormat: Bool
     let isSelecting: Bool
     let isSelected: Bool
     let isSent: Bool
@@ -76,15 +79,16 @@ struct RawTile: View {
     /// so the corner never holds two things competing for the eye.
     @ViewBuilder
     private var formatBadge: some View {
-        if info != nil || isFavourite {
+        let format = showsFormat ? info?.format : nil
+        if format != nil || isFavourite {
             HStack(spacing: 3) {
                 if isFavourite {
                     Image(systemName: "heart.fill")
                         .font(.system(size: 8.5, weight: .bold))
                         .transition(.scale(scale: 0.4).combined(with: .opacity))
                 }
-                if let info {
-                    Text(info.format)
+                if let format {
+                    Text(format)
                         .font(.system(size: 10, weight: .semibold, design: .monospaced))
                 }
             }

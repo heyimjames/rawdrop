@@ -10,6 +10,22 @@ private enum Grid {
 
 private let amber = Color(red: 1.0, green: 0.78, blue: 0.18)
 
+/// "Today" and "Yesterday" are titles on their own but words in a sentence.
+private func inSentence(_ day: String) -> String {
+    day == "Today" || day == "Yesterday" ? day.lowercased() : day
+}
+
+/// "48 sent today", "48 sent on Thursday".
+private func sentLine(_ count: Int, _ day: String) -> String {
+    let word = inSentence(day)
+    return word == day ? "\(count.formatted()) sent on \(day)" : "\(count.formatted()) sent \(word)"
+}
+
+/// "48 from today", "48 from Thursday 4 September".
+private func latestLine(_ count: Int, _ day: String) -> String {
+    "\(count.formatted()) from \(inSentence(day))"
+}
+
 struct WaitingView: View {
     let snapshot: WidgetSnapshot
     let family: WidgetFamily
@@ -54,7 +70,7 @@ private struct Hero: View {
                 }
                 .foregroundStyle(.white)
                 if let count = snapshot.lastSentCount, let day = snapshot.lastSentDay {
-                    Text("\(count.formatted()) on \(day)")
+                    Text(sentLine(count, day))
                         .font(.system(size: 13, weight: .medium))
                         .foregroundStyle(.white.opacity(0.55))
                 }
@@ -66,7 +82,7 @@ private struct Hero: View {
                     .lineLimit(1)
                     .contentTransition(.numericText(value: Double(snapshot.waitingCount)))
                     .widgetAccentable()
-                Text(snapshot.waitingCount == 1 ? "waiting for Lightroom" : "waiting for Lightroom")
+                Text("not in Lightroom yet")
                     .font(.system(size: 13, weight: .medium))
                     .foregroundStyle(.white.opacity(0.55))
             }
@@ -108,7 +124,7 @@ private struct HomeMedium: View {
                 Spacer(minLength: Grid.unit)
                 Hero(snapshot: snapshot, heroSize: 52)
                 if snapshot.waitingCount > 0, let day = snapshot.latestDay {
-                    Text("\(snapshot.latestDayCount.formatted()) from \(day)")
+                    Text(latestLine(snapshot.latestDayCount, day))
                         .font(.system(size: 11, weight: .regular))
                         .foregroundStyle(.white.opacity(0.4))
                         .lineLimit(1)
@@ -184,15 +200,15 @@ private struct LockRectangular: View {
             Image(systemName: snapshot.waitingCount == 0 ? "checkmark.circle" : "camera.aperture")
                 .font(.system(size: 22, weight: .regular))
             VStack(alignment: .leading, spacing: 2) {
-                Text(snapshot.waitingCount == 0 ? "All RAW sent" : "\(snapshot.waitingCount.formatted()) RAW waiting")
+                Text(snapshot.waitingCount == 0 ? "All RAW sent" : "\(snapshot.waitingCount.formatted()) RAW to send")
                     .font(.headline)
                     .lineLimit(1)
                 if snapshot.waitingCount > 0, let day = snapshot.latestDay {
-                    Text("\(snapshot.latestDayCount.formatted()) from \(day)")
+                    Text(latestLine(snapshot.latestDayCount, day))
                         .font(.caption)
                         .lineLimit(1)
                 } else if let count = snapshot.lastSentCount, let day = snapshot.lastSentDay {
-                    Text("\(count.formatted()) on \(day)")
+                    Text(sentLine(count, day))
                         .font(.caption)
                 }
             }
@@ -209,7 +225,7 @@ private struct LockInline: View {
         if snapshot.waitingCount == 0 {
             Text("All RAW sent")
         } else {
-            Text("\(snapshot.waitingCount.formatted()) RAW waiting")
+            Text("\(snapshot.waitingCount.formatted()) RAW to send")
         }
     }
 }
