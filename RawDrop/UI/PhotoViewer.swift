@@ -22,6 +22,9 @@ import Photos
  *               medium tap; the photo dips; the amber frame settles onto
  *               it from 1.03 on the toy spring; the ring pops; the send
  *               count ticks. Deselect: soft tap, frame fades, no motion.
+ *  heart        top right, opposite close. Sets the favourite in Photos
+ *               itself; the heart fills and pops on the toy spring with
+ *               a light tap, the grid tile's heart lands with it.
  *  pull down    the photo follows the finger, backdrop thins
  *  release      past 110pt or flicked → the copy flies back, cropping
  *               to 1:1 and landing on its tile (grid already scrolled
@@ -33,14 +36,18 @@ import Photos
 
 struct PhotoViewer: View {
     let photos: [RawPhoto]
+    /// Each photo's index in `photos`.
+    let position: [String: Int]
     @Binding var current: String?
     let library: RawLibrary
     let sentIDs: Set<String>
     let selection: Set<String>
+    let favouriteIDs: Set<String>
     let isBusy: Bool
     /// On-screen frame of a photo's grid tile, if that tile is realised.
     let origin: (String) -> CGRect?
     let toggleSelect: (RawPhoto) -> Void
+    let toggleFavourite: (RawPhoto) -> Void
     let sendCurrent: (RawPhoto) -> Void
     let sendSelection: () -> Void
     let trimSelection: () -> Void
@@ -67,13 +74,15 @@ struct PhotoViewer: View {
     /// Haptic triggers: selecting is a firmer tap than deselecting.
     @State private var selects = 0
     @State private var deselects = 0
+    @State private var hearts = 0
     /// Mirror of the selection that the hosted pages can observe. Pages are
     /// built once by UIKit, so they cannot read the parent's state directly.
     @State private var pageState = PageState()
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     private var currentPhoto: RawPhoto? {
-        photos.first { $0.id == current }
+        guard let current, let i = position[current], photos.indices.contains(i) else { return nil }
+        return photos[i]
     }
 
     private var fade: Double { Double(hero) * (1 - Double(min(pull / 140, 1))) }
@@ -135,7 +144,7 @@ struct PhotoViewer: View {
             if ProcessInfo.processInfo.arguments.contains("-auto-page") {
                 Task {
                     try? await Task.sleep(for: .seconds(1.5))
-                    if let id = current, let i = library.position[id], photos.indices.contains(i + 1) {
+                    if let id = current, let i = position[id], photos.indices.contains(i + 1) {
                         current = photos[i + 1].id
                     }
                 }
@@ -188,6 +197,7 @@ struct PhotoViewer: View {
         .accessibilityAddTraits(.isModal)
         .sensoryFeedback(.impact(weight: .medium), trigger: selects)
         .sensoryFeedback(.impact(flexibility: .soft), trigger: deselects)
+        .sensoryFeedback(.impact(weight: .light), trigger: hearts)
     }
 
     // MARK: Bands
@@ -207,6 +217,13 @@ struct PhotoViewer: View {
             .accessibilityLabel("Close")
 
             Spacer()
+
+            if let photo = currentPhoto {
+                HeartButton(isOn: favouriteIDs.contains(photo.id)) {
+                    hearts += 1
+                    toggleFavourite(photo)
+                }
+            }
         }
         .padding(.horizontal, 16)
         .padding(.top, 4)
@@ -223,7 +240,7 @@ struct PhotoViewer: View {
                     .onChange(of: proxy.size) { _, _ in stageFrame = proxy.frame(in: .global) }
             }
             if !flying {
-                PhotoPager(photos: photos, position: library.position, current: $current) { photo in
+                PhotoPager(photos: photos, position: position, current: $current) { photo in
                     ViewerPage(photo: photo, state: pageState)
                 }
                 .allowsHitTesting(pull == 0)
@@ -244,6 +261,7 @@ struct PhotoViewer: View {
         let frameNumber = Double(filename.filter(\.isNumber)) ?? 0
         let cameraLine = [shot?.camera, shot?.lens].compactMap { $0 }.joined(separator: " · ")
         let exposure = shot?.line ?? " "
+        let whereWhen = currentPhoto.map(Self.whereWhen) ?? " "
 
         return VStack(spacing: 5) {
             Text(filename)
@@ -261,15 +279,35 @@ struct PhotoViewer: View {
                 .font(.system(size: 13, weight: .medium, design: .monospaced))
                 .foregroundStyle(.secondary)
                 .contentTransition(reduceMotion ? .opacity : .numericText())
+
+            Text(whereWhen)
+                .font(.footnote)
+                .foregroundStyle(.tertiary)
+                .lineLimit(1)
+                .contentTransition(.opacity)
         }
         .multilineTextAlignment(.center)
-        .frame(height: 74)
+        .frame(height: 94)
         .padding(.horizontal, 28)
         .padding(.top, 14)
         .padding(.bottom, 10)
         .animation(Motion.mode, value: filename)
         .animation(Motion.mode, value: shot)
+        .animation(Motion.mode, value: whereWhen)
         .accessibilityElement(children: .combine)
+    }
+
+    /// "Williamsburg, New York City · Sat 11 Oct, 14:32". The place comes
+    /// from the bundled gazetteer, so this never waits on a network.
+    private static func whereWhen(_ photo: RawPhoto) -> String {
+        let place = photo.asset.location.flatMap { PlaceIndex.shared.place(for: $0)?.short }
+        let when = photo.creationDate.map { date in
+            Calendar.current.isDate(date, equalTo: .now, toGranularity: .year)
+                ? date.formatted(.dateTime.weekday(.abbreviated).day().month(.abbreviated).hour().minute())
+                : date.formatted(.dateTime.day().month(.abbreviated).year().hour().minute())
+        }
+        let line = [place, when].compactMap { $0 }.joined(separator: " · ")
+        return line.isEmpty ? " " : line
     }
 
     /// One button. It sends the photo you are looking at until you start
@@ -488,6 +526,36 @@ private struct ViewerPage: View {
             .scaleEffect(shown ? 1 : 1.03)
             .opacity(shown ? 1 : 0)
             .allowsHitTesting(false)
+    }
+}
+
+// MARK: - Heart
+
+/// Favourite, in Photos itself. Same glass circle as close, on the other side.
+private struct HeartButton: View {
+    let isOn: Bool
+    let toggle: () -> Void
+    @State private var pops = 0
+
+    var body: some View {
+        Button {
+            pops += 1
+            toggle()
+        } label: {
+            Image(systemName: isOn ? "heart.fill" : "heart")
+                .font(.system(size: 17, weight: .semibold))
+                .foregroundStyle(.white)
+                .contentTransition(.symbolEffect(.replace))
+                .frame(width: 44, height: 44)
+        }
+        .buttonStyle(.plain)
+        .glassEffect(.regular.interactive(), in: .circle)
+        .phaseAnimator([false, true], trigger: pops) { view, popped in
+            view.scaleEffect(popped && isOn ? 1.15 : 1)
+        } animation: { _ in Motion.toy }
+        .accessibilityLabel(isOn ? "Favourite" : "Not a favourite")
+        .accessibilityHint("Double tap to change. Changes it in Photos too.")
+        .accessibilityAddTraits(isOn ? .isSelected : [])
     }
 }
 

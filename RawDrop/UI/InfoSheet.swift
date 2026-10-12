@@ -61,7 +61,8 @@ struct InfoSheet: View {
             .padding(.bottom, 14)
             .reveal(stage >= 6, reduceMotion: reduceMotion, travel: 20)
 
-            Text("Version \(version)")
+            // GeoNames asks for credit, and it has earned it.
+            Text("Version \(version) · Place names from GeoNames, CC BY 4.0")
                 .font(.caption2)
                 .foregroundStyle(.quaternary)
                 .padding(.bottom, 10)

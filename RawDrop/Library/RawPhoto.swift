@@ -6,11 +6,15 @@ struct RawPhoto: Identifiable, Hashable {
     let asset: PHAsset
     /// Normally the asset's date; overridden only by the fake-library flag.
     let creationDate: Date?
+    /// As Photos had it when the library was read. RawLibrary keeps the live
+    /// answer, which also covers a heart tapped a moment ago in the viewer.
+    let isFavorite: Bool
 
     init(asset: PHAsset) {
         self.id = asset.localIdentifier
         self.asset = asset
         self.creationDate = asset.creationDate
+        self.isFavorite = asset.isFavorite
     }
 
     #if DEBUG
@@ -18,6 +22,7 @@ struct RawPhoto: Identifiable, Hashable {
         self.id = fakeID
         self.asset = asset
         self.creationDate = fakeDate
+        self.isFavorite = asset.isFavorite
     }
     #endif
 

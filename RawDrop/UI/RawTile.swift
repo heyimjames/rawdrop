@@ -7,6 +7,8 @@ struct RawTile: View {
     let isSelecting: Bool
     let isSelected: Bool
     let isSent: Bool
+    /// Hearted in Photos. Shown beside the format, the corner Photos uses.
+    let isFavourite: Bool
     let isExtracting: Bool
     /// The photo is open in the viewer. The tile goes dark so the photo
     /// reads as having been lifted out of the grid.
@@ -70,17 +72,30 @@ struct RawTile: View {
 
     // MARK: Overlays
 
+    /// The format, and a heart in front of it for favourites. One dark chip,
+    /// so the corner never holds two things competing for the eye.
     @ViewBuilder
     private var formatBadge: some View {
-        if let info {
-            Text(info.format)
-                .font(.system(size: 10, weight: .semibold, design: .monospaced))
-                .foregroundStyle(.white)
-                .padding(.horizontal, 5)
-                .padding(.vertical, 2.5)
-                .background(.black.opacity(0.55), in: RoundedRectangle(cornerRadius: 4, style: .continuous))
-                .padding(6)
-                .transition(.opacity)
+        if info != nil || isFavourite {
+            HStack(spacing: 3) {
+                if isFavourite {
+                    Image(systemName: "heart.fill")
+                        .font(.system(size: 8.5, weight: .bold))
+                        .transition(.scale(scale: 0.4).combined(with: .opacity))
+                }
+                if let info {
+                    Text(info.format)
+                        .font(.system(size: 10, weight: .semibold, design: .monospaced))
+                }
+            }
+            .foregroundStyle(.white)
+            .frame(height: 15)
+            .padding(.horizontal, 5)
+            .padding(.vertical, 1)
+            .background(.black.opacity(0.55), in: RoundedRectangle(cornerRadius: 4, style: .continuous))
+            .padding(6)
+            .transition(.opacity)
+            .animation(reduceMotion ? Motion.reduced : Motion.toy, value: isFavourite)
         }
     }
 
@@ -125,6 +140,7 @@ struct RawTile: View {
     private var accessibilityText: String {
         var parts: [String] = []
         if let info { parts.append("\(info.format) photo, \(info.filename)") } else { parts.append("RAW photo") }
+        if isFavourite { parts.append("favourite") }
         if isSent { parts.append("already sent to Lightroom") }
         return parts.joined(separator: ", ")
     }

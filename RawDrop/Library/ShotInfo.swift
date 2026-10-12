@@ -12,12 +12,21 @@ struct ShotInfo: Equatable {
     var shutter: String?
     var iso: String?
 
+    // The same facts as numbers, for search.
+    var make: String?
+    var model: String?
+    var focalValue: Int?
+    var fNumber: Double?
+    var isoValue: Int?
+
     /// "35mm · ƒ/1.8 · 1/250 · ISO 200"
     var line: String {
         [focalLength, aperture, shutter, iso].compactMap { $0 }.joined(separator: " · ")
     }
 
-    static func load(for asset: PHAsset) async -> ShotInfo? {
+    /// `allowNetwork` false reads only what is already on the phone: the
+    /// indexer must never start pulling originals down from iCloud.
+    static func load(for asset: PHAsset, allowNetwork: Bool = true) async -> ShotInfo? {
         let resources = PHAssetResource.assetResources(for: asset)
         // Prefer the JPEG: its EXIF is standard. Fall back to whatever is primary.
         let resource = resources.first { $0.type == .photo && !RawResolver.isRaw($0) }
@@ -25,18 +34,20 @@ struct ShotInfo: Equatable {
             ?? resources.first
         guard let resource else { return nil }
 
-        if let head = await readHead(of: resource, upTo: 768 * 1024), let info = parse(head) {
+        if let head = await readHead(of: resource, upTo: 768 * 1024, allowNetwork: allowNetwork),
+           let info = parse(head) {
             return info
         }
+        guard allowNetwork else { return nil }
         return parse(await fullData(for: asset))
     }
 
     // MARK: Reading
 
     /// Streams the resource and stops once `limit` bytes have arrived.
-    private static func readHead(of resource: PHAssetResource, upTo limit: Int) async -> Data? {
+    private static func readHead(of resource: PHAssetResource, upTo limit: Int, allowNetwork: Bool) async -> Data? {
         let options = PHAssetResourceRequestOptions()
-        options.isNetworkAccessAllowed = true
+        options.isNetworkAccessAllowed = allowNetwork
         let manager = PHAssetResourceManager.default()
         let box = HeadBox()
 
@@ -83,6 +94,8 @@ struct ShotInfo: Equatable {
 
         var info = ShotInfo()
 
+        info.make = (tiff[kCGImagePropertyTIFFMake] as? String)?.trimmingCharacters(in: .whitespaces)
+        info.model = (tiff[kCGImagePropertyTIFFModel] as? String)?.trimmingCharacters(in: .whitespaces)
         if let model = tiff[kCGImagePropertyTIFFModel] as? String {
             let make = (tiff[kCGImagePropertyTIFFMake] as? String) ?? ""
             info.camera = model.lowercased().hasPrefix(make.lowercased()) || make.isEmpty
@@ -93,15 +106,18 @@ struct ShotInfo: Equatable {
 
         if let focal = exif[kCGImagePropertyExifFocalLength] as? Double {
             info.focalLength = "\(Int(focal.rounded()))mm"
+            info.focalValue = Int(focal.rounded())
         }
         if let f = exif[kCGImagePropertyExifFNumber] as? Double {
             info.aperture = "ƒ/" + (f == f.rounded() ? "\(Int(f))" : String(format: "%.1f", f))
+            info.fNumber = f
         }
         if let t = exif[kCGImagePropertyExifExposureTime] as? Double, t > 0 {
             info.shutter = t < 1 ? "1/\(Int((1 / t).rounded()))" : "\(t.formatted(.number.precision(.fractionLength(0...1))))s"
         }
         if let isoValues = exif[kCGImagePropertyExifISOSpeedRatings] as? [Int], let iso = isoValues.first {
             info.iso = "ISO \(iso)"
+            info.isoValue = iso
         }
         return info
     }

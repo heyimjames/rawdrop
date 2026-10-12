@@ -36,7 +36,7 @@
 	<key>ITSAppUsesNonExemptEncryption</key>
 	<false/>
 	<key>NSPhotoLibraryUsageDescription</key>
-	<string>RawDrop reads your photo library to find the RAW files inside your camera imports and hand them to Lightroom. Nothing is uploaded.</string>
+	<string>RawDrop reads your photo library to find the RAW files inside your camera imports, make them searchable and hand them to Lightroom. Favourites you set in RawDrop are saved to Photos. Everything happens on your iPhone; nothing is uploaded.</string>
 	<key>UILaunchScreen</key>
 	<dict>
 		<key>UIColorName</key>

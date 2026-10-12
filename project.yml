@@ -26,7 +26,7 @@ targets:
         CFBundleDisplayName: RawDrop
         CFBundleIconName: AppIcon
         ITSAppUsesNonExemptEncryption: false
-        NSPhotoLibraryUsageDescription: "RawDrop reads your photo library to find the RAW files inside your camera imports and hand them to Lightroom. Nothing is uploaded."
+        NSPhotoLibraryUsageDescription: "RawDrop reads your photo library to find the RAW files inside your camera imports, make them searchable and hand them to Lightroom. Favourites you set in RawDrop are saved to Photos. Everything happens on your iPhone; nothing is uploaded."
         UILaunchScreen:
           UIColorName: LaunchBackground
         UISupportedInterfaceOrientations:
@@ -47,8 +47,8 @@ targets:
         SWIFT_STRICT_CONCURRENCY: minimal
         INFOPLIST_FILE: RawDrop/Info.plist
         PRODUCT_BUNDLE_IDENTIFIER: com.jamesfrewin.RawDrop
-        MARKETING_VERSION: "1.0"
-        CURRENT_PROJECT_VERSION: 5
+        MARKETING_VERSION: "1.1"
+        CURRENT_PROJECT_VERSION: 9
         DEVELOPMENT_TEAM: HJJGM6KHY5
         CODE_SIGN_STYLE: Automatic
         TARGETED_DEVICE_FAMILY: "1"
@@ -89,8 +89,8 @@ targets:
         SWIFT_VERSION: "5.0"
         INFOPLIST_FILE: RawDropWidgets/Info.plist
         PRODUCT_BUNDLE_IDENTIFIER: com.jamesfrewin.RawDrop.Widgets
-        MARKETING_VERSION: "1.0"
-        CURRENT_PROJECT_VERSION: 5
+        MARKETING_VERSION: "1.1"
+        CURRENT_PROJECT_VERSION: 9
         DEVELOPMENT_TEAM: HJJGM6KHY5
         CODE_SIGN_STYLE: Automatic
         TARGETED_DEVICE_FAMILY: "1"

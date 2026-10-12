@@ -7,8 +7,15 @@ struct LibraryView: View {
     @State private var selection = Selection()
     @State private var send = SendController()
     @State private var sent = SentRegistry()
+    @State private var search = SearchModel()
+    @State private var indexer = Indexer()
     /// The photo open in the viewer, if any. Also the pager's position.
     @State private var viewerID: String?
+    /// What the viewer pages through, fixed when it opens. Results that
+    /// shift underneath (a search refining, a heart removed in Favourites)
+    /// must not pull the photo you are looking at out from under you.
+    @State private var viewerPhotos: [RawPhoto] = []
+    @State private var viewerPosition: [String: Int] = [:]
     /// Photos' rule: nothing selects until you say Select.
     @State private var isSelecting = false
     @State private var showingInfo = false
@@ -19,10 +26,23 @@ struct LibraryView: View {
     @State private var pendingLink: URL?
     @State private var tiles = TileRegistry()
     @State private var swipe = SwipeSelect()
+    @FocusState private var searchFocused: Bool
 
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @Environment(\.scenePhase) private var scenePhase
 
     private let columns = Array(repeating: GridItem(.flexible(), spacing: 2), count: 3)
+
+    // MARK: What is on screen
+
+    /// The search results when there is a search, otherwise the whole scope.
+    private var shownPhotos: [RawPhoto] { search.results?.photos ?? library.photos }
+    private var shownSections: [DaySection] { search.results?.sections ?? library.sections }
+    private var shownPosition: [String: Int] { search.results?.position ?? library.position }
+
+    /// The send bar and the search pill share the bottom edge. The bar wins
+    /// whenever there is something to send or a send under way.
+    private var dockShowsSearch: Bool { selection.isEmpty && send.phase == .idle }
 
     var body: some View {
         #if DEBUG
@@ -33,7 +53,7 @@ struct LibraryView: View {
             NavigationStack {
                 ScrollView {
                     LazyVGrid(columns: columns, spacing: 2) {
-                        ForEach(library.sections) { section in
+                        ForEach(shownSections) { section in
                             Section {
                                 ForEach(section.photos) { photo in
                                     tile(for: photo)
@@ -41,6 +61,7 @@ struct LibraryView: View {
                             } header: {
                                 DayHeader(
                                     title: section.title,
+                                    place: section.place,
                                     count: section.photos.count,
                                     allSelected: isSelecting && isFullySelected(section),
                                     disabled: send.isBusy
@@ -55,63 +76,63 @@ struct LibraryView: View {
                     .padding(.bottom, 80)
                 }
                 .background(Color.black)
-                .id(library.album?.id ?? "all")            // a new album is a new grid
+                .scrollDismissesKeyboard(.immediately)
+                .id(gridIdentity)                         // a new scope or search is a new grid
                 .transition(.opacity)
-                .animation(Motion.fade, value: library.album?.id)
-                .scrollDisabled(library.photos.isEmpty)
+                .animation(Motion.fade, value: gridIdentity)
+                .scrollDisabled(shownPhotos.isEmpty)
+                .overlay { emptyState }
                 .overlay {
-                    if library.photos.isEmpty && !library.isLoading {
-                        EmptyLibraryView(
-                            isLimited: library.status == .limited,
-                            inAlbum: library.album != nil
-                        ) {
-                            library.presentLimitedPicker()
-                        }
-                    }
+                    // Focused with nothing typed: the grid steps back so the
+                    // suggestions read. A tap anywhere puts it back.
+                    Color.black
+                        .opacity(searchFocused && !search.isActive ? 0.55 : 0)
+                        .allowsHitTesting(searchFocused && !search.isActive)
+                        .onTapGesture { searchFocused = false }
+                        .animation(Motion.fade, value: searchFocused && !search.isActive)
                 }
-                .navigationTitle(library.album?.title ?? "RAW")
+                .navigationTitle(title)
                 .navigationSubtitle(subtitle)
-                .toolbarTitleMenu { albumMenu }
+                .toolbarTitleMenu { scopeMenu }
                 .toolbar { toolbar }
                 .safeAreaInset(edge: .bottom, spacing: 0) {
-                    SendBar(
-                        selectedCount: selection.count,
-                        phase: send.phase,
-                        send: startSend,
-                        trim: trimSelection,
-                        cancel: send.cancel
-                    )
-                    .background(alignment: .bottom) {
-                        // Photos dissolve as they pass under the bar.
-                        LinearGradient(
-                            stops: [
-                                .init(color: .black.opacity(0), location: 0),
-                                .init(color: .black.opacity(0.85), location: 0.45),
-                                .init(color: .black, location: 0.7),
-                            ],
-                            startPoint: .top, endPoint: .bottom
-                        )
-                        .frame(height: 190)
-                        .offset(y: 50)            // reaches through the home indicator zone
-                        .allowsHitTesting(false)
-                        .opacity(selection.isEmpty && !send.isBusy ? 0 : 1)
-                        .animation(Motion.fade, value: selection.isEmpty && !send.isBusy)
-                    }
+                    dock
+                        .background(alignment: .bottom) {
+                            // Photos dissolve as they pass under the bar.
+                            LinearGradient(
+                                stops: [
+                                    .init(color: .black.opacity(0), location: 0),
+                                    .init(color: .black.opacity(0.85), location: 0.45),
+                                    .init(color: .black, location: 0.7),
+                                ],
+                                startPoint: .top, endPoint: .bottom
+                            )
+                            .frame(height: searchFocused ? 420 : 190)
+                            .offset(y: 50)            // reaches through the home indicator zone
+                            .allowsHitTesting(false)
+                            .opacity(dockShowsSearch && !searchFocused ? 0 : 1)
+                            .animation(Motion.fade, value: dockShowsSearch && !searchFocused)
+                        }
                 }
             }
 
             if viewerID != nil {
                 PhotoViewer(
-                    photos: library.photos,
+                    photos: viewerPhotos,
+                    position: viewerPosition,
                     current: $viewerID,
                     library: library,
                     sentIDs: sent.ids,
                     selection: selection.ids,
+                    favouriteIDs: library.favouriteIDs,
                     isBusy: send.isBusy,
                     origin: { id in tiles.frame(for: id)?.global },
                     toggleSelect: { photo in
                         isSelecting = true
                         toggle(photo.id)
+                    },
+                    toggleFavourite: { photo in
+                        library.setFavourite(photo, !library.isFavourite(photo))
                     },
                     sendCurrent: { photo in
                         send.send([photo])
@@ -123,7 +144,7 @@ struct LibraryView: View {
                     willDismiss: {
                         // Bring the tile on screen, unanimated, so the photo
                         // has somewhere to drop back into.
-                        if let id = viewerID, tiles.frame(for: id) == nil {
+                        if let id = viewerID, tiles.frame(for: id) == nil, shownPosition[id] != nil {
                             var t = Transaction(); t.disablesAnimations = true
                             withTransaction(t) { scroller.scrollTo(id, anchor: .center) }
                         }
@@ -152,13 +173,34 @@ struct LibraryView: View {
                 openPendingLink()
             }
         }
-        .onChange(of: library.allPhotos.count, initial: true) { _, _ in refreshWidget() }
-        .onChange(of: sent.ids.count) { _, _ in refreshWidget() }
+        .onChange(of: library.generation, initial: true) { _, _ in
+            search.setSource(library.photos, places: library.placeByDay)
+            indexer.sync(with: library.allPhotos)
+            refreshWidget()
+        }
+        .onChange(of: library.favouriteIDs, initial: true) { _, _ in
+            search.setFlags(favourites: library.favouriteIDs, sent: sent.ids)
+        }
+        .onChange(of: sent.ids.count) { _, _ in
+            search.setFlags(favourites: library.favouriteIDs, sent: sent.ids)
+            refreshWidget()
+        }
+        .onChange(of: scenePhase, initial: true) { _, _ in updateIndexerPause() }
+        .onChange(of: send.isBusy) { _, _ in updateIndexerPause() }
+        .onChange(of: viewerID) { _, id in
+            if id != nil { searchFocused = false }
+        }
+        .onChange(of: searchFocused) { _, focused in
+            if focused { search.prepare() }
+        }
+        .task {
+            indexer.onNewTags = { [search] in search.tagsChanged() }
+        }
         .onOpenURL { url in
             pendingLink = url
             openPendingLink()
         }
-        .onChange(of: library.album) { _, _ in
+        .onChange(of: library.scope) { _, _ in
             selection.removeAll()
             isSelecting = false
         }
@@ -179,6 +221,80 @@ struct LibraryView: View {
         .sensoryFeedback(.impact(flexibility: .soft), trigger: viewerID != nil) { _, now in now }
     }
 
+    // MARK: Dock
+
+    @ViewBuilder
+    private var dock: some View {
+        ZStack(alignment: .bottom) {
+            if dockShowsSearch && viewerID == nil {
+                SearchDock(
+                    search: search,
+                    indexer: indexer,
+                    placeholder: searchPlaceholder,
+                    suggestions: searchFocused ? suggestions : [],
+                    focused: $searchFocused
+                )
+                .transition(.opacity.combined(with: .scale(scale: 0.97, anchor: .bottom)))
+            }
+            SendBar(
+                selectedCount: selection.count,
+                phase: send.phase,
+                send: startSend,
+                trim: trimSelection,
+                cancel: send.cancel
+            )
+        }
+        .animation(Motion.mode, value: dockShowsSearch)
+    }
+
+    private var suggestions: [SearchModel.Suggestion] {
+        let scoped = Set(library.photos.lazy.map(\.id))
+        let favourites = library.photos.filter { library.favouriteIDs.contains($0.id) }
+        let unsent = library.photos.count - sent.ids.lazy.filter { scoped.contains($0) }.count
+        return search.suggestions(
+            favouriteCount: library.scope == .favourites ? 0 : favourites.count,
+            latestFavourite: favourites.first,
+            unsentCount: unsent
+        )
+    }
+
+    private var searchPlaceholder: String {
+        switch library.scope {
+        case .all: "Search RAW photos"
+        case .favourites: "Search favourites"
+        case .album(let album): "Search \(album.title)"
+        }
+    }
+
+    /// Changes when a new set of results lands, not on every keystroke, so
+    /// the grid fades once per answer rather than once per letter.
+    private var gridIdentity: String {
+        library.scope.id + "|" + (search.results?.query ?? "")
+    }
+
+    private func updateIndexerPause() {
+        indexer.setPaused(scenePhase != .active || send.isBusy)
+    }
+
+    // MARK: Empty
+
+    @ViewBuilder
+    private var emptyState: some View {
+        if search.isActive, let results = search.results, results.photos.isEmpty {
+            NoResultsView(query: search.query.trimmingCharacters(in: .whitespaces),
+                          stillReading: indexer.remaining,
+                          interpreting: search.isInterpreting)
+                .transition(.opacity)
+        } else if library.photos.isEmpty && !library.isLoading {
+            EmptyLibraryView(
+                isLimited: library.status == .limited,
+                scope: library.scope
+            ) {
+                library.presentLimitedPicker()
+            }
+        }
+    }
+
     // MARK: Widget and deep link
 
     private func refreshWidget() {
@@ -191,7 +307,9 @@ struct LibraryView: View {
         guard let url = pendingLink, !library.photos.isEmpty else { return }
         pendingLink = nil
         guard url.host == "select-new", !send.isBusy else { return }
-        if library.album != nil { library.select(album: nil) }
+        search.clear()
+        searchFocused = false
+        if library.scope != .all { library.select(.all) }
         viewerID = nil
         withAnimation(Motion.mode) {
             isSelecting = true
@@ -203,12 +321,13 @@ struct LibraryView: View {
     // MARK: Debug flags
 
     /// Simulator-only shortcuts so screens can be reached without taps:
-    /// `-open-viewer`, `-select-mode`, `-show-about`.
+    /// `-open-viewer`, `-select-mode`, `-show-about`, `-search <query>`,
+    /// `-focus-search`, `-scope favourites`.
     private func applyDebugFlags() {
         #if DEBUG
         let args = ProcessInfo.processInfo.arguments
-        if args.contains("-open-viewer"), viewerID == nil {
-            viewerID = library.photos.first?.id
+        if args.contains("-open-viewer"), viewerID == nil, let first = library.photos.first {
+            open(first)
         }
         if args.contains("-select-mode") {
             isSelecting = true
@@ -220,6 +339,15 @@ struct LibraryView: View {
         }
         if args.contains("-show-about") {
             showingInfo = true
+        }
+        if let i = args.firstIndex(of: "-search"), i + 1 < args.count {
+            search.query = args[i + 1]
+        }
+        if args.contains("-focus-search") {
+            Task { try? await Task.sleep(for: .seconds(1)); searchFocused = true }
+        }
+        if let i = args.firstIndex(of: "-scope"), i + 1 < args.count, args[i + 1] == "favourites" {
+            library.select(.favourites)
         }
         if args.contains("-select-after") {
             Task {
@@ -246,9 +374,10 @@ struct LibraryView: View {
             isSelecting: isSelecting,
             isSelected: selection.contains(photo.id),
             isSent: sent.ids.contains(photo.id),
+            isFavourite: library.favouriteIDs.contains(photo.id),
             isExtracting: send.currentPhotoID == photo.id,
             isLifted: viewerID == photo.id,
-            index: library.position[photo.id] ?? 0,
+            index: shownPosition[photo.id] ?? 0,
             tap: { tap(photo) },
             resolveInfo: { library.resolveInfo(for: photo) }
         )
@@ -273,8 +402,14 @@ struct LibraryView: View {
         if isSelecting {
             toggle(photo.id)
         } else {
-            viewerID = photo.id
+            open(photo)
         }
+    }
+
+    private func open(_ photo: RawPhoto) {
+        viewerPhotos = shownPhotos
+        viewerPosition = shownPosition
+        viewerID = photo.id
     }
 
     private func landingAnimation(for photo: RawPhoto) -> Animation {
@@ -299,26 +434,43 @@ struct LibraryView: View {
         )
     }
 
-
-    // MARK: Albums
+    // MARK: Scope menu
 
     /// Tap the title. Same gesture Files and Photos use for changing scope.
+    /// Everything and Favourites always lead; then only albums that hold RAWs.
     @ViewBuilder
-    private var albumMenu: some View {
+    private var scopeMenu: some View {
         Button {
-            library.select(album: nil)
+            library.select(.all)
         } label: {
-            Label("All RAW photos", systemImage: library.album == nil ? "checkmark" : "photo.on.rectangle")
+            Label("All RAW photos", systemImage: library.scope == .all ? "checkmark" : "photo.on.rectangle")
+            Text(library.allPhotos.count.formatted())
+        }
+        Button {
+            library.select(.favourites)
+        } label: {
+            Label("Favourites", systemImage: library.scope == .favourites ? "checkmark" : "heart")
+            Text(library.favouriteIDs.isEmpty ? "None yet" : library.favouriteIDs.count.formatted())
         }
         if !library.albums.isEmpty {
-            Divider()
-            ForEach(library.albums) { album in
-                Button {
-                    library.select(album: album)
-                } label: {
-                    Label(album.title, systemImage: library.album == album ? "checkmark" : "rectangle.stack")
+            Section("Albums") {
+                ForEach(library.albums) { album in
+                    Button {
+                        library.select(.album(album))
+                    } label: {
+                        Label(album.title, systemImage: library.album?.id == album.id ? "checkmark" : "rectangle.stack")
+                        Text(album.rawCount.formatted())
+                    }
                 }
             }
+        }
+    }
+
+    private var title: String {
+        switch library.scope {
+        case .all: "RAW"
+        case .favourites: "Favourites"
+        case .album(let album): album.title
         }
     }
 
@@ -347,7 +499,7 @@ struct LibraryView: View {
                 }
             }
             ToolbarItem(placement: .topBarTrailing) {
-                if !library.photos.isEmpty {
+                if !shownPhotos.isEmpty {
                     Button("Select") { enterSelectMode() }
                         .disabled(send.isBusy)
                 }
@@ -359,6 +511,7 @@ struct LibraryView: View {
         #if DEBUG
         HangMonitor.mark("enterSelectMode")
         #endif
+        searchFocused = false
         withAnimation(Motion.mode) { isSelecting = true }
     }
 
@@ -372,17 +525,18 @@ struct LibraryView: View {
     /// Once some photos have gone to Lightroom, the obvious bulk action is
     /// "the ones that haven't", so that is what the button becomes. The
     /// title is decided from counts alone; the walk over the library only
-    /// happens when the button is tapped.
+    /// happens when the button is tapped. With a search on, "all" means
+    /// all the results.
     private var bulkTitle: String {
-        if !library.photos.isEmpty && selection.count == library.photos.count { return "Deselect all" }
+        if !shownPhotos.isEmpty && selection.count == shownPhotos.count { return "Deselect all" }
         return sent.ids.isEmpty ? "Select all" : "Select new"
     }
 
     private func bulkSelection() -> Selection {
         if bulkTitle == "Deselect all" { return Selection() }
-        if sent.ids.isEmpty { return Selection(library.photos.map(\.id)) }
-        let unsent = library.photos.map(\.id).filter { !sent.ids.contains($0) }
-        return unsent.isEmpty ? Selection(library.photos.map(\.id)) : Selection(unsent)
+        if sent.ids.isEmpty { return Selection(shownPhotos.map(\.id)) }
+        let unsent = shownPhotos.map(\.id).filter { !sent.ids.contains($0) }
+        return unsent.isEmpty ? Selection(shownPhotos.map(\.id)) : Selection(unsent)
     }
 
     /// Over the limit: keep the first 50 picked, let the rest go.
@@ -397,13 +551,19 @@ struct LibraryView: View {
     }
 
     private var subtitle: String {
-        let n = library.photos.count
+        let n = shownPhotos.count
+        if isSelecting && !selection.isEmpty {
+            let over = selection.count - Handoff.selectionLimit
+            if over > 0 { return "\(selection.count.formatted()) selected · \(over.formatted()) over the limit" }
+            return "\(selection.count.formatted()) of \(n.formatted()) selected"
+        }
+        if search.isActive, let results = search.results {
+            let found = results.photos.count == 1 ? "1 match" : "\(results.photos.count.formatted()) matches"
+            return results.interpreted ? "\(found) · \(results.summary.joined(separator: ", "))" : found
+        }
         if n == 0 { return library.isLoading ? "Looking for RAW photos" : "" }
-        if !isSelecting { return n == 1 ? "1 photo" : "\(n.formatted()) photos" }
-        if selection.isEmpty { return "Select photos" }
-        let over = selection.count - Handoff.selectionLimit
-        if over > 0 { return "\(selection.count.formatted()) selected · \(over.formatted()) over the limit" }
-        return "\(selection.count.formatted()) of \(n.formatted()) selected"
+        if isSelecting { return "Select photos" }
+        return n == 1 ? "1 photo" : "\(n.formatted()) photos"
     }
 
     private func toggle(_ id: String) {
@@ -426,7 +586,9 @@ struct LibraryView: View {
 
     private func startSend() {
         // In the order they were picked, so batch 1 is what they picked first.
-        let byID = Dictionary(uniqueKeysWithValues: library.photos.filter { selection.contains($0.id) }.map { ($0.id, $0) })
+        // Picks can span several searches, so look in the whole library.
+        let byID = Dictionary(library.allPhotos.filter { selection.contains($0.id) }.map { ($0.id, $0) },
+                              uniquingKeysWith: { first, _ in first })
         send.send(selection.order.compactMap { byID[$0] })
     }
 }
@@ -436,6 +598,7 @@ struct LibraryView: View {
 /// A label, not a bar. It scrolls with its photos.
 struct DayHeader: View {
     let title: String
+    let place: String?
     let count: Int
     let allSelected: Bool
     let disabled: Bool
@@ -446,20 +609,30 @@ struct DayHeader: View {
             Text(title)
                 .font(.subheadline.weight(.semibold))
                 .foregroundStyle(.white)
+                .layoutPriority(1)
+            if let place {
+                Text(place)
+                    .font(.subheadline)
+                    .foregroundStyle(.secondary)
+                    .lineLimit(1)
+            }
             Text(count.formatted())
                 .font(.subheadline.monospacedDigit())
                 .foregroundStyle(.tertiary)
-            Spacer()
+                .layoutPriority(1)
+            Spacer(minLength: 4)
             Button(allSelected ? "Deselect" : "Select", action: toggle)
                 .font(.subheadline.weight(.medium))
                 .foregroundStyle(Palette.amber)
                 .contentTransition(.interpolate)
                 .disabled(disabled)
+                .layoutPriority(1)
         }
         .padding(.horizontal, 16)
         .padding(.top, 22)
         .padding(.bottom, 8)
         .animation(Motion.mode, value: allSelected)
+        .accessibilityElement(children: .combine)
     }
 }
 
@@ -467,12 +640,12 @@ struct DayHeader: View {
 
 struct EmptyLibraryView: View {
     let isLimited: Bool
-    let inAlbum: Bool
+    let scope: Scope
     let choosePhotos: () -> Void
 
     var body: some View {
         VStack(spacing: 10) {
-            Image(systemName: "camera.aperture")
+            Image(systemName: scope == .favourites ? "heart" : "camera.aperture")
                 .font(.system(size: 36, weight: .light))
                 .foregroundStyle(.secondary)
                 .padding(.bottom, 6)
@@ -485,7 +658,7 @@ struct EmptyLibraryView: View {
                 .foregroundStyle(.secondary)
                 .multilineTextAlignment(.center)
 
-            if isLimited {
+            if isLimited && scope == .all {
                 Button("Choose photos", action: choosePhotos)
                     .buttonStyle(.glass)
                     .padding(.top, 8)
@@ -496,14 +669,57 @@ struct EmptyLibraryView: View {
     }
 
     private var title: String {
-        if inAlbum { return "No RAW in this album" }
-        return isLimited ? "No RAW in the photos you chose" : "No RAW photos yet"
+        switch scope {
+        case .favourites: return "No favourite RAWs yet"
+        case .album: return "No RAW in this album"
+        case .all: return isLimited ? "No RAW in the photos you chose" : "No RAW photos yet"
+        }
     }
 
     private var body_: String {
-        if inAlbum { return "Tap the title to look somewhere else." }
-        return isLimited
-            ? "Pick the camera imports you want RawDrop to see."
-            : "Import from your camera into Photos. Anything with a RAW inside shows up here on its own."
+        switch scope {
+        case .favourites: return "Tap the heart on a photo here or in Photos and it shows up in this list."
+        case .album: return "Tap the title to look somewhere else."
+        case .all:
+            return isLimited
+                ? "Pick the camera imports you want RawDrop to see."
+                : "Import from your camera into Photos. Anything with a RAW inside shows up here on its own."
+        }
+    }
+}
+
+/// A search that found nothing. Says why when it can: the photos may not
+/// all have been read yet.
+private struct NoResultsView: View {
+    let query: String
+    let stillReading: Int
+    let interpreting: Bool
+
+    var body: some View {
+        VStack(spacing: 10) {
+            Image(systemName: interpreting ? "sparkle" : "magnifyingglass")
+                .font(.system(size: 32, weight: .light))
+                .foregroundStyle(.secondary)
+                .symbolEffect(.pulse, isActive: interpreting)
+                .contentTransition(.symbolEffect(.replace))
+                .padding(.bottom, 6)
+            Text(interpreting ? "Thinking about \u{201C}\(query)\u{201D}" : "Nothing for \u{201C}\(query)\u{201D}")
+                .font(.title3.weight(.semibold))
+                .multilineTextAlignment(.center)
+            Text(detail)
+                .font(.subheadline)
+                .foregroundStyle(.secondary)
+                .multilineTextAlignment(.center)
+        }
+        .padding(.horizontal, 40)
+        .padding(.bottom, 140)
+        .animation(Motion.mode, value: interpreting)
+    }
+
+    private var detail: String {
+        if stillReading > 0 {
+            return "Still reading \(stillReading.formatted()) photos. More may turn up as it goes."
+        }
+        return "Try a place, a camera, a month, or something in the frame."
     }
 }

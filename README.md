@@ -33,7 +33,9 @@ When you import a RAW+JPEG shoot from a camera into Photos, each photo becomes o
 
 RawDrop reaches past the primary. It reads the RAW resource out of each asset with PhotoKit, writes it to a temporary file with its original camera filename, and hands the batch to Lightroom through the standard iOS share sheet.
 
-- Every photo with a RAW inside it, grouped by day, or narrowed to an album from the title menu
+- Every photo with a RAW inside it, grouped by day and named by where it was shot, or narrowed from the title menu to Favourites or any album that holds RAWs
+- Search that reads the photos themselves: "fuji new york", "haribo", "food last november", "favourites not sent". Vision on the phone tags what is in each frame and any words in it; the camera, lens and settings come from the file; the place comes from a gazetteer that ships in the app. Longer questions go to Apple Intelligence when it is on
+- Hearts from Photos on every tile, and a heart in the viewer that sets the favourite in Photos itself
 - Tap to open a photo, flick through the shoot, mark keepers by thumb, send
 - Select mode with tap and sweep, exactly as Photos does it
 - Sends up to 50 at a time, which is Lightroom's limit; pick more and the button turns red and trims to your first 50
@@ -62,7 +64,9 @@ xcodegen generate
 open RawDrop.xcodeproj
 ```
 
-Set your own team in `project.yml` and change the App Group identifier in both entitlements files. Debug builds accept a few launch arguments for reaching screens on a simulator without tapping: `-open-viewer`, `-select-mode`, `-show-about`, `-preview-widgets`, `-fake-library 50000`.
+Set your own team in `project.yml` and change the App Group identifier in both entitlements files. Debug builds accept a few launch arguments for reaching screens on a simulator without tapping: `-open-viewer`, `-select-mode`, `-show-about`, `-preview-widgets`, `-fake-library 50000`, `-search "fuji"`, `-focus-search`, `-scope favourites`.
+
+Place names come from [GeoNames](https://www.geonames.org) (CC BY 4.0): every town over 15,000 people, rebuilt with `tools/build_places.py`.
 
 ## How it works
 
@@ -76,10 +80,15 @@ Set your own team in `project.yml` and change the App Group identifier in both e
 | Direction-gated pan so sweep-select never fights scrolling | `RawDrop/UI/DirectionalPan.swift` |
 | The two Metal shaders: a sweep on the extracting tile, a glint on the RAW card | `RawDrop/UI/Sweep.metal` |
 | Widget snapshot written by the app, read by the extension | `Shared/WidgetSnapshot.swift` |
+| Tagging a photo: Vision labels, text and people, EXIF, place | `RawDrop/Search/Tagger.swift` |
+| Background indexing, newest first, paused while sending | `RawDrop/Search/Indexer.swift` |
+| The inverted index, query parsing and suggestions | `RawDrop/Search/SearchEngine.swift` |
+| Apple Intelligence reading a long query into filters | `RawDrop/Search/QueryInterpreter.swift` |
+| Naming a place with no network: nearest of 34,000 towns | `RawDrop/Places/PlaceIndex.swift`, built by `tools/build_places.py` |
 
 ## Privacy
 
-RawDrop collects nothing. The full policy is one page: [rawdrop-heyimjames-projects.vercel.app/privacy](https://rawdrop-heyimjames-projects.vercel.app/privacy).
+RawDrop collects nothing. Search runs entirely on the phone. The full policy is one page: [rawdrop-heyimjames-projects.vercel.app/privacy](https://rawdrop-heyimjames-projects.vercel.app/privacy).
 
 ## Made by
 
