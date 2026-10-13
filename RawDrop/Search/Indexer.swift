@@ -2,8 +2,10 @@ import Foundation
 import Observation
 
 /// Works through the library in the background, newest first, tagging each
-/// photo once. Stops while the app is in the background or a send is
-/// running, and slows down when the phone is warm.
+/// photo once. Every photo it reads goes through the same Photos pipeline
+/// as the grid and the viewer, so it steps aside whenever someone is
+/// looking: while the viewer is open, while the grid scrolls, while a send
+/// runs, and in the background. It slows down when the phone is warm.
 @MainActor
 @Observable
 final class Indexer {
@@ -20,6 +22,13 @@ final class Indexer {
     @ObservationIgnored private var worker: Task<Void, Never>?
     @ObservationIgnored private var syncTask: Task<Void, Never>?
     @ObservationIgnored private var paused = false
+    /// After a pause, the photos just brought on screen get a head start.
+    @ObservationIgnored private var resumeAt = Date.now.addingTimeInterval(Indexer.launchHeadStart)
+
+    /// Long enough for the first screen of thumbnails to sharpen at launch.
+    private static let launchHeadStart: TimeInterval = 4
+    /// Long enough for a screen of tiles or a viewer page to sharpen.
+    private static let resumeHeadStart: TimeInterval = 1.5
     @ObservationIgnored private var lastNotice = Date.distantPast
     @ObservationIgnored private var queued: Set<String> = []
 
@@ -57,6 +66,9 @@ final class Indexer {
     }
 
     func setPaused(_ paused: Bool) {
+        if self.paused && !paused {
+            resumeAt = max(resumeAt, .now.addingTimeInterval(Self.resumeHeadStart))
+        }
         self.paused = paused
         // Going to the background is the moment to make sure nothing is lost.
         if paused { Task.detached(priority: .utility) { TagStore.shared.save() } }
@@ -81,6 +93,7 @@ final class Indexer {
                 next += 1
                 group.addTask(priority: .utility) { (photo.id, await Tagger.tags(for: photo)) }
             }
+            await waitForQuiet()
             for _ in 0..<lanes { enqueue() }
 
             for await (id, tags) in group {
@@ -89,9 +102,7 @@ final class Indexer {
                 done += 1
                 noticeIfDue()
 
-                while paused && !Task.isCancelled {
-                    try? await Task.sleep(for: .milliseconds(400))
-                }
+                await waitForQuiet()
                 switch ProcessInfo.processInfo.thermalState {
                 case .serious: try? await Task.sleep(for: .milliseconds(250))
                 case .critical: try? await Task.sleep(for: .seconds(2))
@@ -102,6 +113,12 @@ final class Indexer {
         }
         TagStore.shared.save()
         if !Task.isCancelled { onNewTags?() }
+    }
+
+    private func waitForQuiet() async {
+        while (paused || Date.now < resumeAt) && !Task.isCancelled {
+            try? await Task.sleep(for: .milliseconds(300))
+        }
     }
 
     private func noticeIfDue() {

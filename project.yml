@@ -47,8 +47,8 @@ targets:
         SWIFT_STRICT_CONCURRENCY: minimal
         INFOPLIST_FILE: RawDrop/Info.plist
         PRODUCT_BUNDLE_IDENTIFIER: com.jamesfrewin.RawDrop
-        MARKETING_VERSION: "1.1"
-        CURRENT_PROJECT_VERSION: 10
+        MARKETING_VERSION: "1.1.1"
+        CURRENT_PROJECT_VERSION: 11
         DEVELOPMENT_TEAM: HJJGM6KHY5
         CODE_SIGN_STYLE: Automatic
         TARGETED_DEVICE_FAMILY: "1"
@@ -89,8 +89,8 @@ targets:
         SWIFT_VERSION: "5.0"
         INFOPLIST_FILE: RawDropWidgets/Info.plist
         PRODUCT_BUNDLE_IDENTIFIER: com.jamesfrewin.RawDrop.Widgets
-        MARKETING_VERSION: "1.1"
-        CURRENT_PROJECT_VERSION: 10
+        MARKETING_VERSION: "1.1.1"
+        CURRENT_PROJECT_VERSION: 11
         DEVELOPMENT_TEAM: HJJGM6KHY5
         CODE_SIGN_STYLE: Automatic
         TARGETED_DEVICE_FAMILY: "1"

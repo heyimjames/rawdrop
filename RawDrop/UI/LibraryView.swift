@@ -19,9 +19,11 @@ struct LibraryView: View {
     /// Photos' rule: nothing selects until you say Select.
     @State private var isSelecting = false
     @State private var showingInfo = false
-    /// Flips once, when the grid first has something in it. Tiles land in
-    /// sequence rather than as a block; after that they are just there.
-    @State private var landed = false
+    /// When the grid first drew, for the stand-in cells' light.
+    @State private var loadingSince = Date.now
+    /// The wait has gone on long enough to say so.
+    @State private var waitedLong = false
+    @State private var isScrolling = false
     /// A deep link that arrived before the library had loaded.
     @State private var pendingLink: URL?
     @State private var tiles = TileRegistry()
@@ -53,6 +55,17 @@ struct LibraryView: View {
             NavigationStack {
                 ScrollView {
                     LazyVGrid(columns: columns, spacing: 2) {
+                        // Until the first photos are in, the grid's own
+                        // shape stands in for them. See LoadingGrid.
+                        if showsLoadingCells {
+                            Section {
+                                ForEach(0..<(LoadingCells.rows * columns.count), id: \.self) { i in
+                                    LoadingCell(row: i / columns.count + 1, since: loadingSince)
+                                }
+                            } header: {
+                                LoadingHeader(since: loadingSince)
+                            }
+                        }
                         ForEach(shownSections) { section in
                             Section {
                                 ForEach(section.photos) { photo in
@@ -64,7 +77,7 @@ struct LibraryView: View {
                                     place: section.place,
                                     count: section.photos.count,
                                     allSelected: isSelecting && isFullySelected(section),
-                                    disabled: send.isBusy
+                                    disabled: send.isBusy || !library.hasLoaded
                                 ) {
                                     toggle(section)
                                 }
@@ -77,6 +90,10 @@ struct LibraryView: View {
                 }
                 .background(Color.black)
                 .scrollDismissesKeyboard(.immediately)
+                .onScrollPhaseChange { _, phase in
+                    isScrolling = phase.isScrolling
+                    updateIndexerPause()
+                }
                 .id(gridIdentity)                         // a new scope or search is a new grid
                 .transition(.opacity)
                 .animation(Motion.fade, value: gridIdentity)
@@ -166,12 +183,15 @@ struct LibraryView: View {
         .sheet(isPresented: $showingInfo) {
             InfoSheet()
         }
-        .onChange(of: library.photos.isEmpty, initial: true) { _, empty in
-            if !empty {
-                landed = true
+        .onChange(of: library.hasLoaded, initial: true) { _, loaded in
+            if loaded {
                 applyDebugFlags()
                 openPendingLink()
             }
+        }
+        .task {
+            try? await Task.sleep(for: .seconds(LoadingTiming.reassure))
+            waitedLong = true
         }
         .onChange(of: library.generation, initial: true) { _, _ in
             search.setSource(library.photos, places: library.placeByDay)
@@ -189,6 +209,7 @@ struct LibraryView: View {
         .onChange(of: send.isBusy) { _, _ in updateIndexerPause() }
         .onChange(of: viewerID) { _, id in
             if id != nil { searchFocused = false }
+            updateIndexerPause()
         }
         .onChange(of: searchFocused) { _, focused in
             if focused { search.prepare() }
@@ -234,6 +255,10 @@ struct LibraryView: View {
                     suggestions: searchFocused ? suggestions : [],
                     focused: $searchFocused
                 )
+                // Nothing to search until the library has been read.
+                .disabled(!library.hasLoaded)
+                .opacity(library.hasLoaded ? 1 : 0.45)
+                .animation(Motion.fade, value: library.hasLoaded)
                 .transition(.opacity.combined(with: .scale(scale: 0.97, anchor: .bottom)))
             }
             SendBar(
@@ -269,11 +294,17 @@ struct LibraryView: View {
     /// Changes when a new set of results lands, not on every keystroke, so
     /// the grid fades once per answer rather than once per letter.
     private var gridIdentity: String {
-        library.scope.id + "|" + (search.results?.query ?? "")
+        library.shownScope.id + "|" + (search.results?.query ?? "")
     }
 
+    private var showsLoadingCells: Bool {
+        !library.hasLoaded && library.photos.isEmpty && !search.isActive
+    }
+
+    /// The indexer reads photos through the same Photos pipeline the grid
+    /// and the viewer use. Whenever someone is looking, it waits its turn.
     private func updateIndexerPause() {
-        indexer.setPaused(scenePhase != .active || send.isBusy)
+        indexer.setPaused(scenePhase != .active || send.isBusy || viewerID != nil || isScrolling)
     }
 
     // MARK: Empty
@@ -285,7 +316,7 @@ struct LibraryView: View {
                           stillReading: indexer.remaining,
                           interpreting: search.isInterpreting)
                 .transition(.opacity)
-        } else if library.photos.isEmpty && !library.isLoading {
+        } else if library.photos.isEmpty && library.hasLoaded {
             EmptyLibraryView(
                 isLimited: library.status == .limited,
                 scope: library.scope
@@ -304,7 +335,7 @@ struct LibraryView: View {
 
     /// rawdrop://select-new → select mode with the waiting photos chosen.
     private func openPendingLink() {
-        guard let url = pendingLink, !library.photos.isEmpty else { return }
+        guard let url = pendingLink, library.hasLoaded, !library.photos.isEmpty else { return }
         pendingLink = nil
         guard url.host == "select-new", !send.isBusy else { return }
         search.clear()
@@ -394,8 +425,6 @@ struct LibraryView: View {
             }
         }
         .id(photo.id)
-        .opacity(landed ? 1 : 0)
-        .animation(landingAnimation(for: photo), value: landed)
     }
 
     private func tap(_ photo: RawPhoto) {
@@ -411,12 +440,6 @@ struct LibraryView: View {
         viewerPhotos = shownPhotos
         viewerPosition = shownPosition
         viewerID = photo.id
-    }
-
-    private func landingAnimation(for photo: RawPhoto) -> Animation {
-        if reduceMotion { return Motion.reduced }
-        let index = min(library.position[photo.id] ?? 0, 14)     // only the first screenful staggers
-        return Motion.fade.delay(Double(index) * 0.028)
     }
 
     /// Sideways drag across tiles selects (or deselects) everything it crosses.
@@ -438,7 +461,8 @@ struct LibraryView: View {
     // MARK: Scope menu
 
     /// Tap the title. Same gesture Files and Photos use for changing scope.
-    /// Everything and Favourites always lead; then only albums that hold RAWs.
+    /// Everything and Favourites always lead, then the albums. Albums are
+    /// listed before their RAWs are counted; any found to hold none drop out.
     @ViewBuilder
     private var scopeMenu: some View {
         Button {
@@ -460,7 +484,9 @@ struct LibraryView: View {
                         library.select(.album(album))
                     } label: {
                         Label(album.title, systemImage: library.album?.id == album.id ? "checkmark" : "rectangle.stack")
-                        Text(album.rawCount.formatted())
+                        if let count = album.rawCount {
+                            Text(count.formatted())
+                        }
                     }
                 }
             }
@@ -502,7 +528,7 @@ struct LibraryView: View {
             ToolbarItem(placement: .topBarTrailing) {
                 if !shownPhotos.isEmpty {
                     Button("Select") { enterSelectMode() }
-                        .disabled(send.isBusy)
+                        .disabled(send.isBusy || !library.hasLoaded)
                 }
             }
         }
@@ -562,7 +588,17 @@ struct LibraryView: View {
             let found = results.photos.count == 1 ? "1 match" : "\(results.photos.count.formatted()) matches"
             return results.interpreted ? "\(found) · \(results.summary.joined(separator: ", "))" : found
         }
-        if n == 0 { return library.isLoading ? "Looking for RAW photos" : "" }
+        if !library.hasLoaded {
+            // The newest screenful can be up before the rest is read. The
+            // count Photos already knows is the honest one to show.
+            if n > 0, let total = library.expectedCount {
+                return total == 1 ? "1 photo" : "\(total.formatted()) photos"
+            }
+            if n == 0 {
+                return waitedLong ? "Still looking. Big libraries take a moment." : "Looking for RAW photos"
+            }
+        }
+        if n == 0 { return "" }
         if isSelecting { return "Select photos" }
         return n == 1 ? "1 photo" : "\(n.formatted()) photos"
     }
